@@ -1,160 +1,199 @@
-Flask MongoDB Kubernetes Deployment (Devops Intern Assignment)
+☁️ Flask & MongoDB on Kubernetes
 
-This project contains a Python Flask application connected to a MongoDB database, deployed on a Kubernetes cluster. It demonstrates containerization, stateful application management, secure configuration, and horizontal autoscaling practices as per the assignment requirements.
+<div align="center">
+<p>
+<strong>A cloud-native demonstration of deploying a stateful Python application 
+
+
+
+ with autoscaling, persistent storage, and secure authentication.</strong>
+</p>
+</div>
+
+📖 Overview
+
+This project orchestrates a Python Flask web application connected to a MongoDB database within a Kubernetes cluster. It serves as a proof-of-concept for modern DevOps practices, demonstrating:
+
+Containerization of Python web applications.
+
+StatefulSet management for database persistence.
+
+Horizontal Autoscaling (HPA) based on CPU metrics.
+
+Secret Management for secure database authentication.
+
+Service Discovery via internal DNS.
+
+🛠️ Architecture & Prerequisites
+
+The solution is designed to run on a local Kubernetes cluster (Minikube).
+
+Tech Stack
+
+Application: Flask (Python 3.9)
+
+Database: MongoDB (v5.0+)
+
+Orchestration: Kubernetes (Minikube)
+
+Containerization: Docker
 
 Prerequisites
 
-Docker: For building and managing container images.
+Ensure the following are installed before deployment:
 
-Minikube: For running a local Kubernetes cluster.
+docker (v20.10+)
 
-Kubectl: For interacting with the Kubernetes cluster.
+minikube (v1.26+)
 
-Build and Push Instructions
+kubectl (v1.24+)
 
-1. Build the Docker Image
+🚀 Deployment Instructions
 
-To package the Flask application into a container image:
+Follow these steps to deploy the entire stack from scratch.
 
-docker build -t flask-k8s-app:v1 .
+1. Start the Cluster
 
+Initialize Minikube and enable the metrics server (required for Autoscaling).
 
-2. Push to Container Registry
-
-Note: For this Minikube deployment, the image is loaded directly into the cluster. If deploying to a remote cluster like EKS/GKE, use these steps:
-
-# Tag the image for your registry (eg, Docker Hub)
-docker tag flask-k8s-app:v1 your-dockerhub-username/flask-k8s-app:v1
-
-# Push the image
-docker push your-dockerhub-username/flask-k8s-app:v1
-
-
-3. Load Image Locally
-
-Since Minikube is used locally, the image is loaded directly to avoid pulling from a remote registry:
-
-minikube image load flask-k8s-app:v1
-
-
-Deployment Steps
-
-Follow these steps to deploy the application and database on Minikube.
-
-Start Minikube & Enable Metrics
-The metrics-server is required for the Horizontal Pod Autoscaler (HPA) to function.
-
-minikube start
+minikube start --driver=docker
 minikube addons enable metrics-server
 
 
-Deploy Kubernetes Resources
-Apply all configuration files (Secrets, StatefulSet, Deployment, Services, HPA) located in the k8s/ directory.
+2. Build & Load Images
+
+Since we are using a local cluster, we build the image and load it directly into Minikube's Docker daemon.
+
+# Build the image locally
+docker build -t flask-k8s-app:v1 .
+
+# Load the image into Minikube (avoids need for Docker Hub)
+minikube image load flask-k8s-app:v1
+
+
+3. Apply Kubernetes Manifests
+
+Deploy the Secrets, Volumes, Database, and Application.
 
 kubectl apply -f k8s/
 
 
-Verify Pod Status
-Wait until all pods (MongoDB and Flask app) are in the Running state.
+4. Verify & Access
 
-kubectl get pods
+Wait for all pods to enter the Running state:
+
+kubectl get pods -w
 
 
-Access the Application
-Retrieve the URL exposed by Minikube to access the Flask web server.
+Once running, retrieve the URL to access the application:
 
 minikube service flask-service --url
 
 
-Technical Concepts and Explanations
+🧠 Technical Deep Dive
 
 1. DNS Resolution in Kubernetes
 
-Question: How does the Flask app connect to MongoDB without a hardcoded IP?
-
-Explanation: Kubernetes includes an internal DNS server (CoreDNS).
-
-We defined a Service for MongoDB named mongodb-service.
-
-Kubernetes automatically assigns this Service a DNS record: mongodb-service.default.svc.cluster.local.
-
-Inside the cluster, any pod can resolve the hostname mongodb-service to the IP address of the MongoDB pod.
-
-The Flask app uses this hostname in its connection string (mongodb://... @mongodb-service ...), allowing dynamic discovery even if the database pod restarts and gets a new IP.
-
-2. Resource Requests vs. Limits
-
-Question: Why are resource configurations important?
+Context: The Flask application connects to MongoDB using the hostname mongodb-service.
 
 Explanation:
+Kubernetes maintains an internal DNS service (CoreDNS). When we created the Service named mongodb-service, Kubernetes assigned it the DNS record mongodb-service.default.svc.cluster.local.
 
-Requests (requests):
+When the Flask pod tries to connect to mongodb://admin:password@mongodb-service, it queries the internal DNS.
 
-Definition: The minimum amount of CPU/RAM the container is guaranteed.
+The DNS resolves this hostname to the ClusterIP of the MongoDB service (or the Pod IP in headless services).
 
-Use Case: The Kubernetes Scheduler uses this value to decide which Node has enough capacity to place the Pod.
+This decouples the application from specific IP addresses, allowing dynamic scaling and healing.
 
-Configuration: 0.2 CPU, 250Mi Memory.
+2. Resource Management (Requests vs. Limits)
 
-Limits (limits):
+We configured specific resource constraints to ensure cluster stability.
 
-Definition: The maximum amount of CPU/RAM the container is allowed to consume.
+Resource
 
-Use Case: Ensures application stability and protects the Node. If a container exceeds the CPU limit, it is throttled. If it exceeds the Memory limit, it is terminated (OOMKilled) to prevent it from starving other system processes.
+Request (Guaranteed)
 
-Configuration: 0.5 CPU, 500Mi Memory.
+Limit (Hard Cap)
 
-Design Choices
+Purpose
 
-StatefulSet for MongoDB
+CPU
 
-Choice: StatefulSet
+0.2 (200m)
 
-Reasoning: Unlike stateless web apps, databases require persistent storage and a stable network identity (e.g., mongodb-0). A standard Deployment creates interchangeable pods; if a DB pod restarted in a Deployment, it might lose its identity or data volume mapping. A StatefulSet guarantees ordering and persistence.
+0.5 (500m)
 
-Kubernetes Secrets
+Requests help the scheduler find a node with enough capacity. Limits prevent a single pod from starving the node of CPU cycles.
 
-Choice: Kubernetes Secret object.
+Memory
 
-Reasoning: Storing database credentials (username/password) in plain text YAML files is a security vulnerability. Secrets encode this data and inject it securely as environment variables at runtime.
+250Mi
 
-Headless Service
+500Mi
 
-Choice: ClusterIP: None (Headless Service) for MongoDB.
+Memory limits prevent memory leaks from crashing the entire node (OOMKilled).
 
-Reasoning: This allows the application to resolve the IP address of the specific MongoDB pod instance directly, rather than going through a load-balancing IP. This is often preferred for stateful applications where direct node communication is necessary.
+💡 Design Choices
 
-Testing Scenarios and Autoscaling Results
+Why StatefulSet for MongoDB?
 
-1. Database Connectivity Test
+Decision: Deployed MongoDB as a StatefulSet rather than a Deployment.
+Reasoning:
 
-To verify the application could communicate with the database, the following tests were performed:
+Stable Network Identity: StatefulSets provide predictable names (mongodb-0), which are essential for database clusters and replication.
 
-Action: Sent a POST request to /data with sample JSON.
+Ordered Deployment: Ensures the database starts up in a specific order.
 
-Result: Received 201 Created, verifying the app could write to MongoDB.
+Persistent Storage: If the pod crashes and restarts on a different node, the PersistentVolumeClaim (PVC) automatically re-attaches to the new pod, ensuring zero data loss.
 
-Action: Sent a GET request to /data.
+Security Implementation
 
-Result: Received the saved JSON data, verifying read persistence.
+Secrets: Database credentials (MONGO_INITDB_ROOT_USERNAME, PASSWORD) are stored in a Kubernetes Secret object (base64 encoded) and injected as environment variables. This avoids hardcoding passwords in the YAML files.
+
+🧪 Testing Scenarios & Results
+
+1. Database Persistence Test
+
+We verified that data survives pod restarts.
+
+Action: Sent a POST request to /data to insert a record.
+
+Action: Deleted the MongoDB pod (kubectl delete pod mongodb-0).
+
+Result: After the pod auto-restarted, a GET request successfully retrieved the previously saved data.
 
 2. Autoscaling (HPA) Stress Test
 
-Objective: Verify that the Horizontal Pod Autoscaler scales the application from 2 pods to 3+ pods when CPU usage exceeds 70%.
+We simulated a traffic spike to test the Horizontal Pod Autoscaler.
 
-Methodology:
-A shell loop was used to generate high traffic and spike the CPU usage:
+Configuration: Scale replicas if CPU utilization > 70%.
 
-while true; do curl -X POST -H "Content-Type: application/json" -d '{"loadtest": "true"}' http://<MINIKUBE-IP>:<PORT>/data; done
+Simulation Command:
+
+while true; do curl -X POST -H "Content-Type: application/json" -d '{"loadtest": "true"}' http://<MINIKUBE-URL>/data; done
 
 
-Results:
+Observation:
 
-Baseline: The application started with 2 replicas at <1% CPU.
+Baseline: 2 Replicas (< 1% CPU).
 
-Load Applied: CPU usage spiked to 90% (exceeding the 70% threshold).
+Load Applied: CPU spiked to 90%.
 
-Scaling Event: The HPA detected the spike and increased the replica count to 3.
+Result: HPA scaled deployment to 3 Replicas automatically.
 
-Proof of Scaling:
-(Please refer to the attached screenshot Autoscaling_Proof.png showing the REPLICAS count increasing from 2 to 3 under load)
+📸 Proof of Autoscaling
+
+(Screenshot showing Replicas increasing from 2 to 3 under load)
+
+📂 Project Structure
+
+flask-mongodb-app/
+├── app.py                  # Flask Application Source
+├── requirements.txt        # Python Dependencies
+├── Dockerfile              # Container Definition
+├── k8s/                    # Kubernetes Manifests
+│   ├── flask-deployment.yaml
+│   ├── flask-service.yaml
+│   ├── mongo-statefulset.yaml
+│   └── mongo-config.yaml
+└── README.md               # Documentation
