@@ -1,5 +1,4 @@
-# Flask & MongoDB on Kubernetes (Devops Assignment) - Sahil Kumar
-
+# Flask & MongoDB on Kubernetes (Devops Assignment)
 
 ## Overview
 
